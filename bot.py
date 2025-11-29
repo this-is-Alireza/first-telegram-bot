@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from database import MovieDatabase
 
 BOT_TOKEN = "8591604751:AAF2JtpBku6xigI63zrdIH-OahherAtPBXE"
@@ -13,14 +13,25 @@ logging.basicConfig(
 
 db = MovieDatabase()
 
+# آیدی عددی تلگرام خودت رو اینجا بذار (مثلاً از @userinfobot بگیر)
+ADMIN_IDS = [7642451106]  # ❗ این رو تغییر بده
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.add_user(user.id, user.username, user.first_name, user.last_name)
     
     keyboard = [
         [InlineKeyboardButton("🎬 لیست فیلم‌ها", callback_data="show_movies")],
-        [InlineKeyboardButton("📞 پشتیبانی", url="https://t.me/your_channel")]
     ]
+    
+    if is_admin(user.id):
+        keyboard.append([InlineKeyboardButton("➕ افزودن فیلم (ادمین)", callback_data="add_movie")])
+    
+    keyboard.append([InlineKeyboardButton("📞 پشتیبانی", url="https://t.me/your_channel")])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -35,6 +46,10 @@ async def show_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     movies = db.get_all_movies()
     
+    if not movies:
+        await query.edit_message_text("📭 هیچ فیلمی در حال حاضر موجود نیست.")
+        return
+    
     keyboard = []
     for movie in movies:
         keyboard.append([InlineKeyboardButton(movie["title"], callback_data=f"movie_{movie['id']}")])
@@ -48,6 +63,58 @@ async def show_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "روی فیلم مورد نظرت کلیک کن:",
         reply_markup=reply_markup
     )
+
+async def add_movie_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("❌ شما دسترسی ادمین ندارید!")
+        return
+    
+    await query.edit_message_text(
+        "📤 لطفاً فیلم رو ارسال کن و در کپشن آن:\n"
+        "1. عنوان فیلم\n"
+        "2. دسته‌بندی (اختیاری)\n\n"
+        "مثال کپشن:\n"
+        "«فیلم اکشن 2024»\n"
+        "یا\n"
+        "«فیلم کمدی|comedy»"
+    )
+    # حالت انتظار برای دریافت فیلم
+    context.user_data['waiting_for_movie'] = True
+
+async def receive_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        return
+    
+    if update.message.video and context.user_data.get('waiting_for_movie'):
+        video = update.message.video
+        caption = update.message.caption or "فیلم بدون عنوان"
+        
+        # پردازش کپشن
+        if "|" in caption:
+            title, category = caption.split("|", 1)
+            title = title.strip()
+            category = category.strip()
+        else:
+            title = caption
+            category = "general"
+        
+        # ذخیره فیلم در دیتابیس
+        success = db.add_movie(title, video.file_id, caption, category)
+        
+        if success:
+            await update.message.reply_text(
+                f"✅ فیلم با موفقیت اضافه شد!\n"
+                f"📝 عنوان: {title}\n"
+                f"📁 دسته: {category}\n"
+                f"🆔 File ID: {video.file_id[:20]}..."
+            )
+        else:
+            await update.message.reply_text("❌ خطا در اضافه کردن فیلم. ممکن است عنوان تکراری باشد.")
+        
+        context.user_data['waiting_for_movie'] = False
 
 async def send_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -102,6 +169,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_movies(update, context)
     elif data == "back_to_main":
         await start(update, context)
+    elif data == "add_movie":
+        await add_movie_handler(update, context)
     elif data.startswith("movie_"):
         await send_movie(update, context)
 
@@ -110,6 +179,7 @@ def main():
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.VIDEO, receive_movie))
     
     print("🤖 Movie Bot is running...")
     application.run_polling()
