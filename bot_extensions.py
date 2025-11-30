@@ -1,3 +1,6 @@
+from telegram import Update
+from telegram.ext import ContextTypes
+
 async def extended_send_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ورژن توسعه یافته ارسال فیلم با شمارش دانلود - بدون حذف خودکار"""
     query = update.callback_query
@@ -32,3 +35,4 @@ async def extended_send_movie(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     except Exception as e:
         await query.edit_message_text("❌ خطا در ارسال فیلم. لطفا بعدا تلاش کن.")
+
