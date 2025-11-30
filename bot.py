@@ -13,8 +13,8 @@ logging.basicConfig(
 
 db = MovieDatabase()
 
-# آیدی عددی تلگرام خودت رو اینجا بذار (مثلاً از @userinfobot بگیر)
-ADMIN_IDS = [7642451106]  # ❗ این رو تغییر بده
+
+ADMIN_IDS = [7642451106, 6783165751, 404156297]
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
@@ -186,3 +186,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
